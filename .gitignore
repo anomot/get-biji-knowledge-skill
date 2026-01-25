@@ -26,7 +26,11 @@ ENV/
 # 用户配置和会话数据 - 重要：永远不要提交这些文件！
 config.json
 sessions/
-*.md
+
+# Generated output files (not documentation)
+# 生成的输出文件（不包括文档）
+get_*.md
+biji_*.md
 
 # Logs
 *.log
