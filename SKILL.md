@@ -26,6 +26,10 @@ Get笔记 is an AI-powered knowledge management tool that helps users efficientl
 
 **New user-friendly interface** - one-time setup, automatic context, clean output, Markdown export!
 
+> **📁 Output Location**: By default, files are saved to the **current working directory** where the command is run. You can:
+> - Use `--output <path>` to specify a custom output directory
+> - Set `BIJI_OUTPUT_DIR` environment variable for a persistent default location
+
 ### Step 1: Configure Your Knowledge Base (One Time Only)
 
 ```bash

@@ -28,7 +28,13 @@ class BijiClient:
     def __init__(self, output_dir=None):
         self.config_manager = ConfigManager()
         self.session_manager = SessionManager()
-        self.output_dir = Path(output_dir) if output_dir else Path.cwd()
+        # 优先级: 环境变量 > 参数 > 当前工作目录
+        if output_dir:
+            self.output_dir = Path(output_dir)
+        elif os.environ.get('BIJI_OUTPUT_DIR'):
+            self.output_dir = Path(os.environ.get('BIJI_OUTPUT_DIR'))
+        else:
+            self.output_dir = Path.cwd()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 会话文件追踪
