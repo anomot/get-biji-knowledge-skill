@@ -13,11 +13,12 @@ from datetime import datetime
 class ConfigManager:
     def __init__(self, config_file=None):
         if config_file is None:
-            # 默认配置文件路径：~/.claude/skills/get-biji-knowledge/config.json
+            # 默认配置文件路径：~/.claude/get-biji-knowledge-config.json
+            # 放在 ~/.claude/ 目录下，避免被 rsync --delete 误删，且所有位置的 skill 都能访问
             home = Path.home()
-            config_dir = home / ".claude" / "skills" / "get-biji-knowledge"
+            config_dir = home / ".claude"
             config_dir.mkdir(parents=True, exist_ok=True)
-            self.config_file = config_dir / "config.json"
+            self.config_file = config_dir / "get-biji-knowledge-config.json"
         else:
             self.config_file = Path(config_file)
 
