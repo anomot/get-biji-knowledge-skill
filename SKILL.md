@@ -1,406 +1,247 @@
 ---
-name: get-biji-knowledge
-description: "Access and search Get笔记 (biji.com) knowledge bases using OpenAPI. Use when users need to (1) Search their Get笔记 knowledge base, (2) Query information from Get笔记, (3) Ask follow-up questions with conversation history, (4) Retrieve raw recall results for analysis. Supports deep thinking mode, reference citations, and streaming responses. Requires API Key and knowledge base ID from biji.com."
+name: searching-personal-knowledge
+description: "Search and query Get笔记 (biji.com) knowledge bases with intelligent routing. Supports (1) Single/multi-knowledge-base search, (2) Auto-routing based on semantic matching, (3) Follow-up questions with conversation history, (4) Deep thinking mode for complex analysis, (5) Reference citations with source tracking. Requires API Key and knowledge base ID from biji.com."
 ---
 
-# Get笔记知识库 (Get Biji Knowledge)
+# Skill Name: searching-personal-knowledge
 
-Integrate Get笔记 knowledge bases into Claude Code workflows using the official OpenAPI.
+集成 Get笔记（biji.com）知识库到 Claude Code 工作流，支持语义搜索、多库关联分析及深度思考模式。
 
-> 🎯 **新用户？** 直接查看 [使用指南.md](使用指南.md) - 用大白话告诉你如何在对话框中使用这个技能！
->
-> 💻 **技术用户？** 继续阅读下面的 Quick Start 和 Advanced Usage 部分。
+> **新用户？** 直接查看 [使用指南.md](使用指南.md) - 用大白话告诉你如何使用！
 
-## Overview
+<!-- L2: 指令主体 - 全局角色与约束 (顶部锚定) -->
+<role>
+你是一名知识管理专家。你的核心能力是从用户的 Get 笔记知识库中提取精确信息，并结合当前对话上下文提供结构化解答。在处理复杂任务时，你通过维护外部状态文件来确保逻辑的连贯性。
+</role>
 
-Get笔记 is an AI-powered knowledge management tool that helps users efficiently record, organize, and apply personal knowledge. This skill enables Claude to:
+<constraints>
+1. **引用优先**：除非用户明确要求关闭，否则必须在回答中包含笔记引用（来源: 库名 | 标题 | 内容）。
+2. **逻辑连续性**：在处理复杂问题时，应先调用 biji.py 获取知识，严禁直接通过通用知识幻觉回答。
+3. **环境安全**：严禁在日志或输出中暴露 API Key 或 Topic ID，配置信息应仅留存在本地 ~/.claude/ 目录下。
+4. **状态感知**：在处理超过 3 步的复杂任务时，必须创建 search_plan.md 记录任务进度。
+5. **范围继承**：追问时默认延续上一次的检索范围，除非用户显式指定新范围。
+</constraints>
 
-- **Search knowledge bases** with AI-processed results
-- **Enable deep thinking** for complex queries
-- **Get reference citations** for sources
-- **Support follow-up questions** with conversation history (automatic context management)
-- **Retrieve raw recall results** for detailed analysis
-- **Auto-save results** to Markdown files in current directory
+---
 
-## Quick Start (Recommended)
+## Prerequisites（前置条件）
 
-**New user-friendly interface** - one-time setup, automatic context, clean output, Markdown export!
+获取 API 凭证：
+1. 访问 https://www.biji.com/subject
+2. 进入目标知识库，点击 "API 设置"
+3. 复制 **API Key** 和 **知识库 ID**
 
-> **📁 Output Location**: By default, files are saved to the **current working directory** where the command is run. You can:
-> - Use `--output <path>` to specify a custom output directory
-> - Set `BIJI_OUTPUT_DIR` environment variable for a persistent default location
+**重要**: API Key 是敏感信息，请勿提交到版本控制系统。
 
-### Step 1: Configure Your Knowledge Base (One Time Only)
+---
+
+## Core Actions（核心操作）
+
+### 1. 配置管理
 
 ```bash
+# 添加知识库（首次配置）
 python3 scripts/biji.py config add \
-  --name "我的笔记" \
+  --name "知识库名称" \
   --api-key "YOUR_API_KEY" \
   --topic-id "YOUR_TOPIC_ID" \
   --default
-```
 
-Get your credentials from: https://www.biji.com/subject → API 设置
-
-### Step 2: Search!
-
-```bash
-# Simple search (uses default knowledge base)
-python3 scripts/biji.py search "你的问题"
-
-# Specify knowledge base
-python3 scripts/biji.py search "Python最佳实践" --kb "技术笔记"
-
-# Start new conversation
-python3 scripts/biji.py search "新话题" --new
-```
-
-**That's it!** The tool will:
-- ✅ Remember your API credentials
-- ✅ Automatically manage conversation context for follow-ups
-- ✅ Save results as Markdown files in current directory
-- ✅ Show clean, formatted output (no script details)
-
-### View Your Configurations
-
-```bash
-# List all knowledge bases
+# 查看所有配置
 python3 scripts/biji.py config list
 
-# Show specific knowledge base
-python3 scripts/biji.py config show "我的笔记"
+# 设置全局引用开关
+python3 scripts/biji.py config set refs true
 ```
 
-### View Conversation History
+### 2. 基础检索
 
 ```bash
-# List all sessions
-python3 scripts/biji.py session list
-
-# List sessions for specific knowledge base
-python3 scripts/biji.py session list --kb "技术笔记"
-```
-
-### Example Workflow
-
-```bash
-# First time: configure
-python3 scripts/biji.py config add --name "工作笔记" --api-key sk_xxx --topic-id DMJa --default
-
-# Ask first question
-python3 scripts/biji.py search "什么是微服务架构？"
-# → Saves to: get_工作笔记_20260125_143022.md
-
-# Follow-up question (context automatically included)
-python3 scripts/biji.py search "它有什么优缺点？"
-# → Appends to: get_工作笔记_20260125_143022.md
-
-# Start new topic
-python3 scripts/biji.py search "Docker容器化部署流程" --new
-# → Creates new session, saves to: get_工作笔记_20260125_150000.md
-```
-
-## Prerequisites
-
-Before using this skill, obtain your API credentials:
-
-1. Visit Get笔记 knowledge base: https://www.biji.com/subject
-2. Navigate to the knowledge base you want to use
-3. Click "API 设置" (API Settings) in the top navigation
-4. Copy your **API Key** and **知识库 ID** (Topic ID)
-
-**Important**: Keep your API Key secure. Never commit it to version control.
-
-## Features
-
-### 🎯 Easy Mode (scripts/biji.py) - **Recommended**
-
-- ✅ One-time configuration (save API credentials)
-- ✅ Automatic conversation context management
-- ✅ Clean, user-friendly output
-- ✅ Auto-save results to Markdown files
-- ✅ No need to see Python script execution
-
-```bash
-# Configure once
-python3 scripts/biji.py config add --name "我的笔记" --api-key KEY --topic-id ID --default
-
-# Then just search
+# 简单搜索（使用默认知识库）
 python3 scripts/biji.py search "你的问题"
 
-# Follow-up questions work automatically (context preserved)
-python3 scripts/biji.py search "更详细的内容？"
+# 指定知识库搜索
+python3 scripts/biji.py search "问题" --kb "知识库名"
+
+# 开启新会话（清除历史上下文）
+python3 scripts/biji.py search "新话题" --new
+
+# 关闭深度思考模式
+python3 scripts/biji.py search "简单问题" --no-deep-seek
 ```
 
-### ⚙️ Advanced Mode (Low-level API scripts)
+### 3. 检索范围控制
 
-For advanced users who need:
-- Manual control over all parameters
-- Integration with other tools
-- Custom workflow automation
+| 模式 | Flag | 执行逻辑 |
+|------|------|----------|
+| 默认模式 | `--default` | 仅查询 is_default 标记的库 |
+| 精准模式 | `--kb "名称"` | 查询指定的单个或多个库 |
+| 广播模式 | `--auto` | 语义路由，自动匹配描述相关的库 |
+| 广域模式 | `--all` | 遍历所有已配置的知识库 |
 
-See [Advanced Usage](#advanced-usage) section below.
+**示例**:
+```bash
+# 默认库搜索
+python3 scripts/biji.py search "房地产政策" --default
+
+# 指定多个库搜索
+python3 scripts/biji.py search "AI 趋势" --kb "技术笔记" --kb "投资参考"
+
+# 自动路由（根据描述匹配最相关的库）
+python3 scripts/biji.py search "最新政策分析" --auto
+
+# 全库检索
+python3 scripts/biji.py search "年度总结" --all
+
+# 命令叠加
+python3 scripts/biji.py search "新问题" --all --new
+```
+
+### 4. 追问与上下文
+
+- **自动延续**：默认继承上一次检索的范围和会话
+- **显式切换**：使用 `--new` 开启新会话，使用范围 Flag 切换检索范围
+- **范围锁定**：切换后的追问会继承新范围
+
+```bash
+# 首次搜索（指定技术笔记库）
+python3 scripts/biji.py search "什么是微服务？" --kb "技术笔记"
+
+# 追问（自动延续在技术笔记库）
+python3 scripts/biji.py search "它有什么优缺点？"
+
+# 切换到全库（后续追问也在全库）
+python3 scripts/biji.py search "其他领域如何应用？" --all
+```
+
+### 5. 召回原始数据
+
+获取未经 AI 处理的检索结果，查看评分和来源信息：
+
+```bash
+python3 scripts/biji.py recall "问题" --top-k 10
+```
 
 ---
 
-## Core Capabilities
+## Advanced: Multi-KB Cross-Analysis（多库关联分析）
 
-### 1. AI-Powered Knowledge Search
+当用户提出跨领域或复杂问题时，必须启动"问题拆解-多库检索"模式。
 
-Search your Get笔记 knowledge base with AI-processed, intelligently formatted results.
+### 工作流程
 
-**When to use**:
-- User asks to search their Get笔记 knowledge base
-- Need intelligent answers synthesized from multiple sources
-- Want deep thinking analysis for complex questions
-- Need to see source references and citations
+1. **任务建模**：将问题拆解为 2-4 个具体的原子搜索词
+2. **执行检索**：调用 multi_search.py 或逐库执行 biji.py search
+3. **关联分析**：对比不同库之间的知识关联、冲突或互补点
 
-**How to use**:
+### 执行示例
 
 ```bash
-python3 scripts/search_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "你的问题" \
-  --stream \
-  --refs
+# 使用 multi_search.py 执行跨库检索
+python3 scripts/multi_search.py '{"queries": ["AI Agent 协作", "多智能体架构"], "kbs": ["政经参考", "技术笔记"]}'
 ```
 
-**Parameters**:
-- `--api-key`: Your Get笔记 API Key (required)
-- `--topic-id`: Knowledge base ID (required)
-- `--question`: Search query (required)
-- `--stream`: Enable streaming responses for real-time output (recommended)
-- `--refs`: Include source references and citations
-- `--deep-seek` / `--no-deep-seek`: Enable/disable deep thinking mode (default: enabled)
-- `--history`: JSON string for follow-up questions
+### 关联分析模板
 
-**Example workflow**:
-
-```
-User: "Search my Get笔记 for information about machine learning algorithms"
-
-# First, ask the user for their credentials if not already provided
-Assistant: "To search your Get笔记 knowledge base, I'll need your API Key and Topic ID. You can find these at https://www.biji.com/subject > API Settings."
-
-User: [Provides API_KEY and TOPIC_ID]
-
-# Run the search
-python3 scripts/search_knowledge.py \
-  --api-key USER_API_KEY \
-  --topic-id USER_TOPIC_ID \
-  --question "machine learning algorithms" \
-  --stream \
-  --refs
-
-# The script will output:
-# - Processing status
-# - Deep thinking process
-# - Answer content
-# - Reference citations
-```
-
-### 2. Follow-up Questions with Context
-
-Continue a conversation by passing previous Q&A as history.
-
-**When to use**:
-- User asks a follow-up question
-- Need to refine or clarify previous answers
-- Want to explore a topic in more depth
-
-**How to use**:
-
-```bash
-# First question
-python3 scripts/search_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "什么是深度学习？"
-
-# Follow-up question with history
-python3 scripts/search_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "它和机器学习有什么区别？" \
-  --history '[{"content":"什么是深度学习？","role":"user"},{"content":"深度学习是一种机器学习方法...","role":"assistant"}]'
-```
-
-**Note**: Build the history array incrementally with each question-answer pair.
-
-### 3. Raw Recall Results
-
-Retrieve unprocessed recall results to see detailed scoring and source information.
-
-**When to use**:
-- Need to understand which documents were retrieved
-- Want to see similarity scores and ranking
-- Debugging or analyzing search quality
-- Need raw content without AI processing
-
-**How to use**:
-
-```bash
-python3 scripts/recall_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "你的问题" \
-  --top-k 5 \
-  --intent-rewrite \
-  --select-matrix
-```
-
-**Parameters**:
-- `--api-key`: Your Get笔记 API Key (required)
-- `--topic-id`: Knowledge base ID (required)
-- `--question`: Search query (required)
-- `--top-k`: Number of results to return (default: 10)
-- `--intent-rewrite`: Enable question intent rewriting
-- `--select-matrix`: Enable result re-ranking
-- `--history`: JSON string for follow-up questions
-
-**Output includes**:
-- Document ID
-- Title
-- Content preview
-- Similarity score
-- Source type (FILE, NOTE, BLOGGER)
-- Recall source (embedding, keyword)
-
-## API Limits and Best Practices
-
-**Current API Limits** (Public Beta):
-- QPS: 2 requests per second
-- Daily limit: 5,000 calls
-
-**Best Practices**:
-
-1. **Use streaming mode** (`--stream`) for better user experience
-2. **Enable refs** when citations are important
-3. **Cache credentials** - don't ask repeatedly for API keys
-4. **Handle errors gracefully** - check for rate limits and failures
-5. **Batch related questions** to minimize API calls
-
-## Detailed Reference
-
-For comprehensive API documentation, including:
-- Complete endpoint specifications
-- Response format details
-- Error codes and handling
-- Advanced configuration options
-
-See [references/api_reference.md](references/api_reference.md)
-
-## Troubleshooting
-
-**"Authorization failed"**:
-- Verify API Key is correct
-- Check that X-OAuth-Version header is set to "1"
-
-**"Topic not found"**:
-- Verify Topic ID matches your knowledge base
-- Ensure knowledge base has API access enabled
-
-**"Rate limit exceeded"**:
-- Current QPS is 2, wait before retrying
-- Daily limit is 5,000 calls
-
-**"No results returned"**:
-- Try different search terms
-- Check if knowledge base has relevant content
-- Use `--intent-rewrite` for better query understanding
-
-## Getting Help
-
-- Get笔记 Web: https://www.biji.com/subject
-- API Settings: Click "API 设置" in knowledge base view
-- Official support: Join Get笔记 support group (QR code in official docs)
+- **比较维度**：对比不同库中对同一概念的描述差异
+- **发散关联**：寻找 A 库的理论在 B 库中的实践案例
+- **冲突校验**：识别不同笔记之间的观点矛盾
 
 ---
 
-## Advanced Usage
+## Task Planning (Manus 模式)
 
-For users who need direct API access and manual control.
+在处理需要多次搜索的复杂任务时，必须通过物理文件锚定任务进度：
 
-### Direct API Scripts
+### 启动条件
 
-The following low-level scripts are available for advanced use cases:
+- 任务涉及 3 个以上检索步骤
+- 需要跨库整合信息
+- 用户要求深度分析或报告
 
-#### 1. search_knowledge.py - Direct API Search
+### 执行流程
 
-Manual API search with full parameter control:
+1. **建立物理规划**：在工作区创建 `search_plan.md`
 
-```bash
-python3 scripts/search_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "你的问题" \
-  --stream \
-  --refs \
-  --deep-seek
+```markdown
+# 任务：[任务描述]
+- 状态：进行中
+- 检索目标：
+  1. [ ] 搜索 [库A] 关于 [关键词1]
+  2. [ ] 搜索 [库B] 关于 [关键词2]
+  3. [ ] 整合分析并输出报告
+
+## 检索记录
+（每次搜索后在此记录结论）
 ```
 
-**When to use**: Custom integrations, automation, specific parameter tuning.
+2. **状态记录**：每完成一次搜索，将核心结论同步至 search_plan.md
+3. **重大决策前重读**：在输出最终结论前，重新读取 search_plan.md 刷新注意力
 
-#### 2. recall_knowledge.py - Raw Recall API
+---
 
-Get unprocessed recall results:
+## Tool & Script Integration（工具与脚本集成）
 
-```bash
-python3 scripts/recall_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "你的问题" \
-  --top-k 10 \
-  --intent-rewrite \
-  --select-matrix
+### 脚本清单
+
+| 脚本 | 用途 |
+|------|------|
+| `scripts/biji.py` | 主程序入口（推荐使用） |
+| `scripts/config_manager.py` | 配置管理模块 |
+| `scripts/session_manager.py` | 会话管理模块 |
+| `scripts/search_knowledge.py` | 底层搜索 API |
+| `scripts/recall_knowledge.py` | 召回 API |
+| `scripts/multi_search.py` | 多库联合查询 |
+| `scripts/sync_metadata.py` | 自动描述生成 |
+
+### 引用规范
+
+所有引用必须包含三要素：
+
+```
+[结论内容] [来源: {库名} | 标题: {文章标题} | 核心: {内容摘要}]
 ```
 
-**When to use**: Debugging, analyzing search quality, building custom processing.
+### 详细 API 参考
 
-#### 3. Manual Context Management
+完整的 API 文档请参阅 [references/api_reference.md](references/api_reference.md)
 
-Pass history manually for follow-up questions:
+---
 
-```bash
-python3 scripts/search_knowledge.py \
-  --api-key YOUR_API_KEY \
-  --topic-id YOUR_TOPIC_ID \
-  --question "追问内容" \
-  --history '[{"content":"第一个问题","role":"user"},{"content":"回答","role":"assistant"}]'
-```
+## API Limits（接口限制）
 
-### Configuration and Session Management Utilities
+- **QPS**: 2 请求/秒
+- **日调用上限**: 5,000 次
 
-```bash
-# Configuration management
-python3 scripts/config_manager.py add --name "笔记" --api-key KEY --topic-id ID
-python3 scripts/config_manager.py list
-python3 scripts/config_manager.py show "笔记"
+**最佳实践**:
+1. 使用流式模式 (`--stream`) 获得更好的用户体验
+2. 在多库检索时添加 0.5 秒间隔
+3. 合理使用 `--new` 管理会话，避免上下文过长
 
-# Session management
-python3 scripts/session_manager.py list --kb "笔记"
-python3 scripts/session_manager.py show SESSION_ID
-python3 scripts/session_manager.py clear SESSION_ID
-```
+---
 
-### Integration Example
+## Troubleshooting（故障排除）
 
-Example of integrating into a custom script:
+| 错误 | 原因 | 解决方案 |
+|------|------|----------|
+| Authorization failed | API Key 错误 | 检查 API Key 是否正确 |
+| Topic not found | 知识库 ID 错误 | 核实 Topic ID |
+| Rate limit exceeded | 超出 QPS 限制 | 等待后重试 |
+| No results | 无匹配内容 | 尝试不同关键词或使用 --intent-rewrite |
 
-```python
-import sys
-sys.path.insert(0, '/path/to/scripts')
+---
 
-from config_manager import ConfigManager
-from session_manager import SessionManager
+<!-- 末尾锚定：具体的执行指令与输出要求 -->
+<final_instruction>
+在向用户交付最终答案前，请核对：
 
-# Load config
-config_mgr = ConfigManager()
-config = config_mgr.get_knowledge_base("我的笔记")
+1. **来源引用**：是否已为每条结论标注引用来源（库名 | 标题 | 内容）？
+2. **范围确认**：当前检索范围是否符合用户预期？
+3. **状态同步**：如果是复杂任务，search_plan.md 是否已更新？
+4. **上下文刷新**：如果对话超过 10 轮，是否建议用户使用 --new 优化性能？
+5. **一致性检查**：回答是否严格基于 API 返回的原始素材？
 
-# Use the API
-# ... your custom code here
-```
+**输出格式**：[结论概要] + [引用的笔记列表] + [后续建议]
 
-**Note**: For most use cases, `biji.py` is the recommended interface. Use these advanced scripts only when you need specific customization.
+**冲突处理**：当多个库的信息出现矛盾时，必须在回复中显式列出不同来源的观点差异，禁止由模型私自平滑处理。
+</final_instruction>

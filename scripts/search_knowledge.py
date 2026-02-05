@@ -10,8 +10,9 @@ import argparse
 import requests
 import json
 import sys
+import time
 
-def search_knowledge(api_key, topic_id, question, deep_seek=True, refs=False, history=None, stream=False):
+def search_knowledge(api_key, topic_id, question, deep_seek=True, refs=False, history=None, stream=False, verbose=True, debug=False, max_retries=1):
     """
     搜索知识库并返回 AI 处理后的结果
 
@@ -23,6 +24,9 @@ def search_knowledge(api_key, topic_id, question, deep_seek=True, refs=False, hi
         refs: 是否返回引用
         history: 历史对话列表
         stream: 是否使用流式响应
+        verbose: 是否输出详细信息到控制台
+        debug: 是否输出调试信息
+        max_retries: 遇到频率限制时的最大重试次数（默认1次）
     """
     base_url = "https://open-api.biji.com/getnote/openapi"
     endpoint = "/knowledge/search/stream" if stream else "/knowledge/search"
@@ -45,89 +49,142 @@ def search_knowledge(api_key, topic_id, question, deep_seek=True, refs=False, hi
     if history:
         data["history"] = history
 
-    try:
-        if stream:
-            # 流式响应
-            response = requests.post(url, headers=headers, json=data, stream=True, timeout=120)
-            response.raise_for_status()
+    # 重试逻辑：遇到频率限制时自动等待并重试
+    for retry_attempt in range(max_retries + 1):
+        rate_limit_retry_ms = None  # 记录API要求的重试等待时间
 
-            print("=== 流式响应 ===\n")
-            full_answer = ""
-            refs_data = None
+        try:
+            if stream:
+                # 流式响应
+                response = requests.post(url, headers=headers, json=data, stream=True, timeout=120)
+                response.raise_for_status()
 
-            for line in response.iter_lines():
-                if line:
-                    line_str = line.decode('utf-8')
-                    if line_str.startswith('data: '):
-                        try:
-                            json_data = json.loads(line_str[6:])
-                            msg_type = json_data.get('msg_type')
-                            data_content = json_data.get('data', {})
-                            msg = data_content.get('msg', '')
+                if verbose and retry_attempt == 0:
+                    print("=== 流式响应 ===\n")
 
-                            if msg_type == 6:
-                                # 处理流程
-                                print(f"[流程] {msg}")
-                            elif msg_type == 105:
-                                # 引用数据
-                                refs_data = data_content.get('ref_list', [])
-                            elif msg_type == 21:
-                                # 深度思考过程
-                                print(msg, end='', flush=True)
-                            elif msg_type == 22:
-                                # 思考时长
-                                print(f"\n[思考时长: {msg}ms]\n")
-                            elif msg_type == 1:
-                                # 回答内容
-                                print(msg, end='', flush=True)
-                                full_answer += msg
-                            elif msg_type == 3:
-                                # 结束
-                                print("\n\n=== 回答完成 ===")
-                            elif msg_type == 8:
-                                # 风控提醒
-                                print(f"\n[风控提醒: {msg}]")
-                            elif msg_type == 0:
-                                # 错误
-                                print(f"\n[错误: {msg}]")
-                        except json.JSONDecodeError:
-                            continue
+                full_answer = ""
+                refs_data = None
+                msg_types_received = []  # 调试：记录收到的消息类型
 
-            if refs_data:
-                print("\n\n=== 引用来源 ===")
-                for i, ref in enumerate(refs_data, 1):
-                    print(f"\n[{i}] {ref.get('title', '无标题')}")
-                    print(f"    类型: {ref.get('rag_type', 'unknown')}")
-                    print(f"    ID: {ref.get('note_id', '')}")
+                for line in response.iter_lines():
+                    if line:
+                        line_str = line.decode('utf-8')
+                        if line_str.startswith('data: '):
+                            try:
+                                json_data = json.loads(line_str[6:])
+                                msg_type = json_data.get('msg_type')
+                                data_content = json_data.get('data', {})
+                                msg = data_content.get('msg', '')
 
-            return {"answer": full_answer, "refs": refs_data}
-        else:
-            # 非流式响应
-            response = requests.post(url, headers=headers, json=data, timeout=120)
-            response.raise_for_status()
-            result = response.json()
+                                if debug:
+                                    msg_types_received.append(msg_type)
 
-            if result.get('h', {}).get('c') == 0:
-                answer_data = result.get('c', {})
-                print("=== 回答 ===\n")
-                print(answer_data.get('answers', ''))
+                                if msg_type == 6:
+                                    # 处理流程
+                                    if verbose:
+                                        print(f"[流程] {msg}")
+                                elif msg_type == 105:
+                                    # 引用数据
+                                    refs_data = data_content.get('ref_list', [])
+                                elif msg_type == 21:
+                                    # 深度思考过程
+                                    if verbose:
+                                        print(msg, end='', flush=True)
+                                elif msg_type == 22:
+                                    # 思考时长
+                                    if verbose:
+                                        print(f"\n[思考时长: {msg}ms]\n")
+                                elif msg_type == 1:
+                                    # 回答内容
+                                    if verbose:
+                                        print(msg, end='', flush=True)
+                                    full_answer += msg
+                                elif msg_type == 3:
+                                    # 结束
+                                    if verbose:
+                                        print("\n\n=== 回答完成 ===")
+                                elif msg_type == 8:
+                                    # 风控提醒
+                                    if verbose:
+                                        print(f"\n[风控提醒: {msg}]")
+                                elif msg_type == 0:
+                                    # 错误
+                                    if verbose:
+                                        print(f"\n[错误: {msg}]")
+                                elif msg_type == 201:
+                                    # 频率限制/重试请求
+                                    rate_limit_retry_ms = json_data.get('retry', 30000)
+                                    if debug:
+                                        print(f"\n[DEBUG] 收到频率限制 msg_type=201, retry={rate_limit_retry_ms}ms", file=sys.stderr)
+                                else:
+                                    # 未知消息类型
+                                    if debug:
+                                        import json as json_module
+                                        print(f"\n[DEBUG] Unknown msg_type={msg_type}, full_json={json_module.dumps(json_data, ensure_ascii=False)}", file=sys.stderr)
+                            except json.JSONDecodeError:
+                                continue
 
-                if 'deep_seek' in answer_data:
-                    print("\n\n=== 深度思考 ===\n")
-                    print(answer_data.get('deep_seek', ''))
+                if debug and msg_types_received:
+                    print(f"\n[DEBUG] Received msg_types: {sorted(set(msg_types_received))}", file=sys.stderr)
+                    print(f"[DEBUG] Total messages: {len(msg_types_received)}", file=sys.stderr)
+                    print(f"[DEBUG] full_answer length: {len(full_answer)}", file=sys.stderr)
 
-                return answer_data
+                # 检查是否遇到频率限制
+                if rate_limit_retry_ms and retry_attempt < max_retries:
+                    wait_seconds = rate_limit_retry_ms / 1000
+                    if verbose:
+                        print(f"\n⏳ API 频率限制，等待 {wait_seconds:.1f} 秒后自动重试 ({retry_attempt + 1}/{max_retries})...", file=sys.stderr)
+                    time.sleep(wait_seconds)
+                    continue  # 重试
+                elif rate_limit_retry_ms and retry_attempt >= max_retries:
+                    if verbose:
+                        print(f"\n❌ 已达到最大重试次数，请稍后再试", file=sys.stderr)
+                    return None
+
+                # 成功获取到回答或无需重试
+                if verbose and refs_data:
+                    print("\n\n=== 引用来源 ===")
+                    for i, ref in enumerate(refs_data, 1):
+                        print(f"\n[{i}] {ref.get('title', '无标题')}")
+                        print(f"    类型: {ref.get('rag_type', 'unknown')}")
+                        print(f"    ID: {ref.get('note_id', '')}")
+
+                return {"answer": full_answer, "refs": refs_data}
+
             else:
-                error_msg = result.get('h', {}).get('e', '未知错误')
-                print(f"错误: {error_msg}", file=sys.stderr)
-                return None
+                # 非流式响应
+                response = requests.post(url, headers=headers, json=data, timeout=120)
+                response.raise_for_status()
+                result = response.json()
 
-    except requests.exceptions.RequestException as e:
-        print(f"请求失败: {e}", file=sys.stderr)
-        return None
-    except Exception as e:
-        print(f"发生错误: {e}", file=sys.stderr)
-        return None
+                if result.get('h', {}).get('c') == 0:
+                    answer_data = result.get('c', {})
+                    if verbose:
+                        print("=== 回答 ===\n")
+                        print(answer_data.get('answers', ''))
+
+                        if 'deep_seek' in answer_data:
+                            print("\n\n=== 深度思考 ===\n")
+                            print(answer_data.get('deep_seek', ''))
+
+                    return answer_data
+                else:
+                    error_msg = result.get('h', {}).get('e', '未知错误')
+                    if verbose:
+                        print(f"错误: {error_msg}", file=sys.stderr)
+                    return None
+
+        except requests.exceptions.RequestException as e:
+            if verbose:
+                print(f"请求失败: {e}", file=sys.stderr)
+            return None
+        except Exception as e:
+            if verbose:
+                print(f"发生错误: {e}", file=sys.stderr)
+            return None
+
+    # 所有重试均失败
+    return None
 
 
 def main():

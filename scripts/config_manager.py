@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 Get笔记配置管理器
-管理多个知识库的 API 凭证
+管理多个知识库的 API 凭证和元数据
+支持知识库描述字段用于语义路由
 """
 
 import json
 import os
 from pathlib import Path
+from datetime import datetime
 
 class ConfigManager:
     def __init__(self, config_file=None):
@@ -20,24 +22,57 @@ class ConfigManager:
             self.config_file = Path(config_file)
 
         self.config = self._load_config()
+        self._migrate_config()  # 自动迁移旧配置
 
     def _load_config(self):
         """加载配置文件"""
         if self.config_file.exists():
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        return {"knowledge_bases": {}, "default": None, "global_settings": {}}
+        return {"knowledge_bases": {}, "default": None, "global_settings": {"refs": True}}
 
     def _save_config(self):
         """保存配置文件"""
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(self.config, f, ensure_ascii=False, indent=2)
 
-    def add_knowledge_base(self, name, api_key, topic_id, set_default=False):
-        """添加知识库配置"""
+    def _migrate_config(self):
+        """自动迁移旧配置格式，为缺失字段添加默认值"""
+        migrated = False
+
+        # 确保 global_settings 存在
+        if "global_settings" not in self.config:
+            self.config["global_settings"] = {"refs": True}
+            migrated = True
+
+        # 为每个知识库添加缺失的字段
+        for name, kb_config in self.config.get("knowledge_bases", {}).items():
+            if "description" not in kb_config:
+                kb_config["description"] = ""
+                migrated = True
+            if "last_updated" not in kb_config:
+                kb_config["last_updated"] = ""
+                migrated = True
+
+        if migrated:
+            self._save_config()
+
+    def add_knowledge_base(self, name, api_key, topic_id, description="", set_default=False):
+        """
+        添加知识库配置
+
+        Args:
+            name: 知识库名称
+            api_key: API Key
+            topic_id: 知识库 ID
+            description: 知识库描述（用于语义路由）
+            set_default: 是否设为默认知识库
+        """
         self.config["knowledge_bases"][name] = {
             "api_key": api_key,
-            "topic_id": topic_id
+            "topic_id": topic_id,
+            "description": description,
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S") if description else ""
         }
         if set_default or self.config["default"] is None:
             self.config["default"] = name
@@ -58,6 +93,87 @@ class ConfigManager:
         """列出所有知识库"""
         return list(self.config["knowledge_bases"].keys())
 
+    def get_all_kbs(self):
+        """获取所有知识库的完整配置（包含 name）"""
+        result = []
+        for name, config in self.config.get("knowledge_bases", {}).items():
+            kb_info = {"name": name}
+            kb_info.update(config)
+            result.append(kb_info)
+        return result
+
+    def get_all_descriptions(self):
+        """
+        获取所有知识库的名称和描述
+        用于语义路由时的快速匹配
+
+        Returns:
+            list: [{"name": "库名", "description": "描述"}, ...]
+        """
+        result = []
+        for name, config in self.config.get("knowledge_bases", {}).items():
+            result.append({
+                "name": name,
+                "description": config.get("description", "")
+            })
+        return result
+
+    def update_description(self, name, new_description):
+        """
+        更新知识库描述
+
+        Args:
+            name: 知识库名称
+            new_description: 新的描述内容
+
+        Returns:
+            bool: 是否更新成功
+        """
+        if name in self.config["knowledge_bases"]:
+            self.config["knowledge_bases"][name]["description"] = new_description
+            self.config["knowledge_bases"][name]["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._save_config()
+            return True
+        return False
+
+    def get_kbs_by_descriptions(self, query, threshold=0.0):
+        """
+        根据查询语句匹配知识库描述（简单关键词匹配）
+
+        Args:
+            query: 用户查询语句
+            threshold: 匹配阈值（0-1）
+
+        Returns:
+            list: 匹配的知识库列表，按相关度排序
+        """
+        results = []
+        query_words = set(query.lower().split())
+
+        for name, config in self.config.get("knowledge_bases", {}).items():
+            description = config.get("description", "").lower()
+            if not description:
+                continue
+
+            desc_words = set(description.split())
+            # 计算简单的词汇重叠度
+            overlap = len(query_words & desc_words)
+            if query_words:
+                score = overlap / len(query_words)
+            else:
+                score = 0
+
+            if score > threshold:
+                results.append({
+                    "name": name,
+                    "description": config.get("description", ""),
+                    "score": score
+                })
+
+        # 按分数降序排序
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
+
     def set_default(self, name):
         """设置默认知识库"""
         if name in self.config["knowledge_bases"]:
@@ -69,6 +185,15 @@ class ConfigManager:
     def get_default(self):
         """获取默认知识库名称"""
         return self.config["default"]
+
+    def get_default_kb(self):
+        """获取默认知识库的完整配置"""
+        default_name = self.config["default"]
+        if default_name and default_name in self.config["knowledge_bases"]:
+            kb_info = {"name": default_name}
+            kb_info.update(self.config["knowledge_bases"][default_name])
+            return kb_info
+        return None
 
     def remove_knowledge_base(self, name):
         """删除知识库配置"""
@@ -109,6 +234,7 @@ if __name__ == "__main__":
     add_parser.add_argument('--name', required=True, help='知识库名称')
     add_parser.add_argument('--api-key', required=True, help='API Key')
     add_parser.add_argument('--topic-id', required=True, help='知识库ID')
+    add_parser.add_argument('--description', default='', help='知识库描述（用于语义路由）')
     add_parser.add_argument('--default', action='store_true', help='设为默认')
 
     # list 命令
@@ -131,13 +257,20 @@ if __name__ == "__main__":
     remove_parser = subparsers.add_parser('remove', help='删除知识库')
     remove_parser.add_argument('name', help='知识库名称')
 
+    # update-desc 命令
+    update_desc_parser = subparsers.add_parser('update-desc', help='更新知识库描述')
+    update_desc_parser.add_argument('name', help='知识库名称')
+    update_desc_parser.add_argument('description', help='新的描述内容')
+
     args = parser.parse_args()
 
     manager = ConfigManager()
 
     if args.command == 'add':
-        manager.add_knowledge_base(args.name, args.api_key, args.topic_id, args.default)
+        manager.add_knowledge_base(args.name, args.api_key, args.topic_id, args.description, args.default)
         print(f"✅ 已添加知识库: {args.name}")
+        if args.description:
+            print(f"   描述: {args.description[:50]}{'...' if len(args.description) > 50 else ''}")
         if args.default or manager.get_default() == args.name:
             print(f"✅ 设为默认知识库")
 
@@ -148,7 +281,10 @@ if __name__ == "__main__":
         print("📚 已配置的知识库:\n")
         for name in bases:
             prefix = "⭐" if name == default else "  "
-            print(f"{prefix} {name}")
+            config = manager.get_knowledge_base(name)
+            desc = config.get('description', '')
+            desc_preview = f" - {desc[:30]}..." if desc else ""
+            print(f"{prefix} {name}{desc_preview}")
         if not bases:
             print("  (无)")
 
@@ -162,6 +298,12 @@ if __name__ == "__main__":
             print(f"📖 知识库: {name}")
             print(f"   API Key: {config['api_key'][:10]}...")
             print(f"   Topic ID: {config['topic_id']}")
+            desc = config.get('description', '')
+            if desc:
+                print(f"   描述: {desc}")
+            last_updated = config.get('last_updated', '')
+            if last_updated:
+                print(f"   更新时间: {last_updated}")
         else:
             print("❌ 知识库不存在")
 
@@ -182,6 +324,13 @@ if __name__ == "__main__":
     elif args.command == 'remove':
         if manager.remove_knowledge_base(args.name):
             print(f"✅ 已删除知识库: {args.name}")
+        else:
+            print(f"❌ 知识库不存在: {args.name}")
+
+    elif args.command == 'update-desc':
+        if manager.update_description(args.name, args.description):
+            print(f"✅ 已更新知识库描述: {args.name}")
+            print(f"   新描述: {args.description[:50]}{'...' if len(args.description) > 50 else ''}")
         else:
             print(f"❌ 知识库不存在: {args.name}")
 
