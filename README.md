@@ -61,24 +61,64 @@ git clone <repository-url> get-biji-knowledge
 
 ## 🚀 快速开始
 
-### 初次配置
+### 交互式初始化（推荐）
 
-首次使用需要添加 Get笔记 API 凭证：
+首次使用时，使用交互式配置向导一次性完成所有设置：
+
+```bash
+# 启动交互式配置向导
+python3 scripts/biji.py init
+```
+
+这个命令会引导您：
+1. ✅ 以表格式添加一个或多个知识库配置
+2. ✅ 逐个输入知识库的 API Key、Topic ID、描述方式
+3. ✅ 设置默认知识库
+4. ✅ 配置输出目录（可选）
+5. ✅ 自动保存所有配置
+
+### 传统配置方式（可选）
+
+如果您需要更细粒度的控制，可以使用命令行方式：
 
 ```bash
 # 添加第一个知识库
-python3 scripts/biji.py config add
+python3 scripts/biji.py config add \
+  --name 政经参考 \
+  --api-key YOUR_API_KEY \
+  --topic-id YOUR_TOPIC_ID \
+  --default
 
-# 按提示输入：
-# - 知识库名称（自定义标识）
-# - API Key（从 https://biji.com/openapi 获取）
-# - Topic ID（目标知识库的 ID）
+# 添加更多知识库
+python3 scripts/biji.py config add \
+  --name 技术笔记 \
+  --api-key YOUR_API_KEY \
+  --topic-id ANOTHER_TOPIC_ID \
+  --description "技术文章和代码片段"
 ```
 
 **获取凭证的位置**：
 1. 访问 [biji.com/openapi](https://biji.com/openapi)
 2. 点击"生成API密钥"
 3. 在知识库设置中找到 Topic ID
+
+### 配置输出目录（可选但推荐）
+
+默认情况下，生成的 Markdown 文档会保存到当前工作目录。为了让文档始终保存到指定位置，建议配置一个专用的输出目录：
+
+```bash
+# 设置输出目录
+python3 scripts/biji.py config set-output "/Users/wzt/Documents/ViboCoding/Skills"
+
+# 验证配置
+python3 scripts/biji.py config list
+```
+
+**特性**：
+- ✅ 配置后，无论从哪个目录运行都会保存到指定位置
+- ✅ 配置信息保存在 `~/.claude/get-biji-knowledge-config.json`（不会被 Skill 更新覆盖）
+- ✅ 支持多个知识库共用同一输出目录
+- ✅ 可随时修改输出目录，新设置立即生效
 
 ### 基础使用
 
@@ -120,7 +160,7 @@ python3 scripts/biji.py search "数据库索引优化策略" --auto
 # 手动添加描述
 python3 scripts/biji.py config update-desc 后端开发 "包含后端开发、API设计、数据库优化、微服务架构相关知识"
 
-# 使用 AI 自动生成描述
+# 使用 AI 自动生成描述（Web UI 或命令行）
 python3 scripts/biji.py config update-desc 后端开发 --auto
 
 # 批量更新所有描述
@@ -128,10 +168,16 @@ python3 scripts/sync_metadata.py
 ```
 
 **描述撰写指南**：
+- 格式：`该库主要涵盖 [核心领域]，核心关键词包括 [标签1、标签2...]，适用于 [场景]。`
 - 控制在 150 字以内
 - 聚焦领域、主题和关键技术
 - 使用客观、中性的语言
 - 避免主观评价或时效性内容
+
+**自动生成选项**：
+- **Web UI**: 在配置表单中描述字段输入 `auto`，系统会自动生成全面的描述
+- **命令行**: 运行 `python3 scripts/biji.py config update-desc <名称> --auto`
+- **批量**: 使用 `python3 scripts/sync_metadata.py --all` 为所有知识库生成描述
 
 ### 3. 上下文感知的追问
 
@@ -191,6 +237,22 @@ python3 scripts/biji.py config think false
 
 ## ⚙️ 配置管理
 
+### Web UI 配置（推荐）
+
+最便捷的配置方式，通过浏览器界面管理所有知识库：
+
+```bash
+python3 scripts/biji.py gui
+```
+
+**特点**：
+- 🎨 现代化图形界面，直观易用
+- ⚡ 自动关闭：关闭浏览器标签页后，服务会在 5 秒内自动停止
+- 🛑 手动停止：点击页面右上角的"停止服务"按钮随时关闭
+- 📝 自动生成：描述字段输入 `auto` 时，系统自动根据库内容生成全面的描述
+
+### 命令行配置
+
 ### 列出所有知识库
 ```bash
 python3 scripts/biji.py config list
@@ -230,6 +292,7 @@ get-biji-knowledge/
 │   ├── config_manager.py   # 配置管理
 │   ├── session_manager.py  # 上下文和会话处理
 │   ├── sync_metadata.py    # 批量描述生成器
+│   ├── web_config.py       # Web 配置界面
 │   └── multi_search.py     # 多库协调
 └── references/
     └── api_docs.md         # Get笔记 OpenAPI 文档

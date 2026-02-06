@@ -31,13 +31,17 @@ class BijiClient:
     def __init__(self, output_dir=None):
         self.config_manager = ConfigManager()
         self.session_manager = SessionManager()
-        # 优先级: 环境变量 > 参数 > 当前工作目录
+        # 优先级: 参数 > 环境变量 > 配置文件 > 当前工作目录
         if output_dir:
             self.output_dir = Path(output_dir)
         elif os.environ.get('BIJI_OUTPUT_DIR'):
             self.output_dir = Path(os.environ.get('BIJI_OUTPUT_DIR'))
         else:
-            self.output_dir = Path.cwd()
+            configured_dir = self.config_manager.get_output_dir()
+            if configured_dir:
+                self.output_dir = configured_dir
+            else:
+                self.output_dir = Path.cwd()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 会话文件追踪
@@ -158,6 +162,12 @@ class BijiClient:
             print(f"\n请先添加配置:")
             print(f"  python3 biji.py config add --name 我的笔记 --api-key YOUR_KEY --topic-id YOUR_ID")
             return None
+
+        # 检查输出目录配置
+        if not self.config_manager.get_output_dir():
+            print("⚠️  警告: 输出目录尚未配置")
+            print(f"   文档将保存到当前工作目录: {self.output_dir}")
+            print(f"   要配置输出目录，请使用: python3 biji.py config set-output <路径>\n")
 
         # 显示搜索范围
         kb_names_str = ", ".join([kb['name'] for kb in target_kbs])
@@ -576,6 +586,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
+    # 交互式初始化配置（推荐首次使用）
+    python3 biji.py init
+
     # 配置知识库（一个 API Key 可用于多个仓库）
     python3 biji.py config add --name 政经参考 --api-key YOUR_KEY --topic-id ID1 --default
     python3 biji.py config add --name 技术笔记 --api-key YOUR_KEY --topic-id ID2 --description "Python AI 架构"
@@ -600,6 +613,9 @@ def main():
     # 设置全局引用开关
     python3 biji.py config set refs true   # 开启引用
     python3 biji.py config set refs false  # 关闭引用
+
+    # 设置输出目录
+    python3 biji.py config set-output /path/to/output
 
     # 查看配置
     python3 biji.py config list
@@ -632,6 +648,9 @@ def main():
     config_parser = subparsers.add_parser('config', help='管理配置')
     config_subparsers = config_parser.add_subparsers(dest='config_command')
 
+    # gui 命令
+    subparsers.add_parser('gui', help='启动 GUI 配置助手')
+
     config_add = config_subparsers.add_parser('add', help='添加知识库')
     config_add.add_argument('--name', required=True, help='知识库名称')
     config_add.add_argument('--api-key', required=True, help='API Key（可多个仓库共用）')
@@ -655,6 +674,9 @@ def main():
     config_update_desc.add_argument('name', help='知识库名称')
     config_update_desc.add_argument('description', help='新的描述内容')
 
+    config_set_output = config_subparsers.add_parser('set-output', help='设置输出目录')
+    config_set_output.add_argument('path', help='输出目录路径')
+
     # session 命令
     session_parser = subparsers.add_parser('session', help='管理会话')
     session_subparsers = session_parser.add_subparsers(dest='session_command')
@@ -664,6 +686,9 @@ def main():
 
     session_clear = session_subparsers.add_parser('clear', help='清空会话')
     session_clear.add_argument('session_id', help='会话ID')
+
+    # init 命令（交互式初始化配置）
+    init_parser = subparsers.add_parser('init', help='交互式初始化配置向导')
 
     args = parser.parse_args()
 
@@ -703,10 +728,16 @@ def main():
             if args.default:
                 print(f"⭐ 已设为默认知识库")
 
+            # 检查输出目录是否已配置
+            if not config_mgr.get_output_dir():
+                print(f"\n💡 提示: 输出目录尚未配置")
+                print(f"   使用命令: config set-output <路径>")
+
         elif args.config_command == 'list':
             bases = config_mgr.list_knowledge_bases()
             default = config_mgr.get_default()
             global_refs = config_mgr.get_global_setting('refs', True)
+            output_dir = config_mgr.get_output_dir()
 
             print("📚 已配置的知识库:\n")
             for name in bases:
@@ -721,6 +752,10 @@ def main():
 
             print(f"\n⚙️  全局设置:")
             print(f"   引用显示: {'开启' if global_refs else '关闭'}")
+            if output_dir:
+                print(f"   输出目录: {output_dir}")
+            else:
+                print(f"   输出目录: ⚠️  未设置 (使用当前工作目录)")
 
         elif args.config_command == 'show':
             config = config_mgr.get_knowledge_base(args.name)
@@ -762,6 +797,12 @@ def main():
             else:
                 print(f"❌ 知识库不存在: {args.name}")
 
+        elif args.config_command == 'set-output':
+            if config_mgr.set_output_dir(args.path):
+                print(f"✅ 输出目录已设置为: {config_mgr.get_output_dir()}")
+            else:
+                print(f"❌ 无法设置输出目录: {args.path}")
+
         else:
             config_parser.print_help()
 
@@ -788,6 +829,27 @@ def main():
 
         else:
             session_parser.print_help()
+
+    elif args.command == 'init':
+        # 导入交互式配置模块
+        from interactive_config import InteractiveConfigurator
+        try:
+            configurator = InteractiveConfigurator()
+            configurator.run()
+        except KeyboardInterrupt:
+            print("\n\n⏹️  配置已取消")
+        except Exception as e:
+            print(f"\n❌ 错误: {e}")
+
+    elif args.command == 'gui':
+        try:
+            from web_config import run_server
+            run_server()
+        except ImportError as e:
+            print(f"❌ 无法启动 Web 配置: {e}")
+            print("可能是缺少相关文件，请检查 web_config.py 是否存在。")
+        except Exception as e:
+            print(f"❌ Web 配置启动失败: {e}")
 
     else:
         parser.print_help()

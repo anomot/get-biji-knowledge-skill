@@ -30,7 +30,7 @@ class ConfigManager:
         if self.config_file.exists():
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        return {"knowledge_bases": {}, "default": None, "global_settings": {"refs": True}}
+        return {"knowledge_bases": {}, "default": None, "global_settings": {"refs": True, "output_dir": None}}
 
     def _save_config(self):
         """保存配置文件"""
@@ -43,7 +43,12 @@ class ConfigManager:
 
         # 确保 global_settings 存在
         if "global_settings" not in self.config:
-            self.config["global_settings"] = {"refs": True}
+            self.config["global_settings"] = {"refs": True, "output_dir": None}
+            migrated = True
+
+        # 确保 global_settings 中有 output_dir 字段
+        if "output_dir" not in self.config.get("global_settings", {}):
+            self.config["global_settings"]["output_dir"] = None
             migrated = True
 
         # 为每个知识库添加缺失的字段
@@ -221,6 +226,35 @@ class ConfigManager:
         self.config["global_settings"][key] = value
         self._save_config()
         return True
+
+    def get_output_dir(self):
+        """获取输出目录"""
+        output_dir = self.get_global_setting('output_dir')
+        if output_dir:
+            return Path(output_dir)
+        return None
+
+    def set_output_dir(self, output_dir):
+        """
+        设置输出目录
+
+        Args:
+            output_dir: 输出目录路径
+
+        Returns:
+            bool: 是否设置成功
+        """
+        if output_dir:
+            path = Path(output_dir).expanduser()
+            # 验证路径有效性
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+                self.set_global_setting('output_dir', str(path))
+                return True
+            except Exception as e:
+                print(f"❌ 无法创建输出目录: {e}")
+                return False
+        return False
 
 
 if __name__ == "__main__":
