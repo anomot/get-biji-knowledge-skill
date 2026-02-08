@@ -232,6 +232,13 @@ HTML_CONTENT = """
         #message { margin-top: 20px; padding: 10px; border-radius: 6px; display: none; }
         .success { background-color: #e8fcf1; color: #0f6b36; }
         .error { background-color: #fce8e8; color: #c92a2a; }
+        .output-dir-section { background: #f9f9fb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 2px solid #e5e5e5; }
+        .output-dir-section h3 { margin-top: 0; color: #1d1d1f; font-size: 16px; }
+        .path-display { background: white; padding: 10px; border-radius: 4px; margin-top: 8px; font-family: monospace; font-size: 12px; color: #86868b; word-break: break-all; }
+        .path-display.active { background: #e8fcf1; color: #0f6b36; }
+        .hint-box { background: #e8f2ff; padding: 12px; border-radius: 6px; margin-top: 10px; font-size: 13px; color: #1d1d1f; line-height: 1.6; }
+        .hint-box strong { color: #0071e3; }
+        .hint-box code { background: white; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -265,6 +272,21 @@ HTML_CONTENT = """
         </form>
         <div id="message"></div>
 
+        <div class="output-dir-section">
+            <h3>📁 文档存放位置（全局设置）</h3>
+            <label for="outputDir">输入输出目录路径</label>
+            <input type="text" id="outputDir" name="outputDir" placeholder="例如: /Users/username/Documents/get-biji-output">
+
+            <div class="hint-box">
+                <strong>💡 如何获取路径：</strong><br>
+                <strong>• macOS：</strong>在 Finder 中选中文件夹 → 按 <code>Option + Command + C</code> (复制为路径名) → 粘贴到上方输入框<br>
+                <strong>• Windows：</strong>按住 <code>Shift</code> + 右键文件夹 → 点击"复制为路径" → 粘贴到上方输入框
+            </div>
+
+            <div class="path-display" id="currentOutputDir" style="display: none;"></div>
+            <button type="button" id="setOutputDirBtn" style="margin-top: 10px; width: 100%; background-color: #34c759; cursor: pointer;">保存文档位置</button>
+        </div>
+
         <div class="kb-list">
             <h2>现有知识库</h2>
             <div id="kbList">加载中...</div>
@@ -276,6 +298,9 @@ HTML_CONTENT = """
         const messageDiv = document.getElementById('message');
         const kbListDiv = document.getElementById('kbList');
         const stopBtn = document.getElementById('stopBtn');
+        const outputDirInput = document.getElementById('outputDir');
+        const setOutputDirBtn = document.getElementById('setOutputDirBtn');
+        const currentOutputDirDiv = document.getElementById('currentOutputDir');
 
         // 启动心跳（每2秒发送一次）
         setInterval(async () => {
@@ -300,6 +325,62 @@ HTML_CONTENT = """
                 }
             }
         });
+
+        // 保存输出目录
+        setOutputDirBtn.addEventListener('click', async () => {
+            const path = outputDirInput.value.trim();
+            if (!path) {
+                showMessage('请输入有效的目录路径', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/set-output-dir', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path})
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.status === 'ok') {
+                        showMessage(`✅ 文档位置已保存: ${path}`, 'success');
+                        currentOutputDirDiv.textContent = `当前位置: ${path}`;
+                        currentOutputDirDiv.className = 'path-display active';
+                        currentOutputDirDiv.style.display = 'block';
+                        outputDirInput.value = '';
+                    } else if (result.status === 'error') {
+                        showMessage(`❌ 设置失败: ${result.message}`, 'error');
+                    }
+                } else {
+                    showMessage('保存失败，请检查路径是否有效', 'error');
+                }
+            } catch (e) {
+                showMessage('网络错误', 'error');
+                console.error(e);
+            }
+        });
+
+        // 加载初始输出目录
+        async function loadOutputDir() {
+            try {
+                const response = await fetch('/api/get-output-dir', {method: 'GET'});
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.output_dir) {
+                        currentOutputDirDiv.textContent = `当前位置: ${data.output_dir}`;
+                        currentOutputDirDiv.className = 'path-display active';
+                        currentOutputDirDiv.style.display = 'block';
+                    } else {
+                        currentOutputDirDiv.textContent = '未设置，默认保存到当前工作目录';
+                        currentOutputDirDiv.className = 'path-display';
+                        currentOutputDirDiv.style.display = 'block';
+                    }
+                }
+            } catch (e) {
+                console.error('加载输出目录失败:', e);
+            }
+        }
 
         function showMessage(text, type) {
             messageDiv.textContent = text;
@@ -469,6 +550,7 @@ HTML_CONTENT = """
         };
 
         loadKBs();
+        loadOutputDir();
     </script>
 </body>
 </html>
@@ -484,6 +566,8 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_update_desc()
         elif self.path == '/api/shutdown':
             self.handle_shutdown()
+        elif self.path == '/api/set-output-dir':
+            self.handle_set_output_dir()
         else:
             self.send_error(404)
 
@@ -500,6 +584,8 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_task_status(parsed)
         elif parsed.path == '/api/heartbeat':
             self.handle_heartbeat()
+        elif parsed.path == '/api/get-output-dir':
+            self.handle_get_output_dir()
         else:
             self.send_error(404)
 
@@ -626,6 +712,32 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
         self.send_json({"status": "shutdown"})
         # 延迟一小段时间确保响应被发送
         threading.Timer(0.1, lambda: sys.exit(0)).start()
+
+    def handle_set_output_dir(self):
+        """处理设置输出目录请求"""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+
+        path = data.get('path', '').strip()
+        if not path:
+            self.send_json({"status": "error", "message": "路径不能为空"})
+            return
+
+        cm = ConfigManager()
+        if cm.set_output_dir(path):
+            self.send_json({"status": "ok", "path": str(cm.get_output_dir())})
+        else:
+            self.send_json({"status": "error", "message": "无法创建或访问该目录"})
+
+    def handle_get_output_dir(self):
+        """处理获取输出目录请求"""
+        cm = ConfigManager()
+        output_dir = cm.get_output_dir()
+        if output_dir:
+            self.send_json({"output_dir": str(output_dir)})
+        else:
+            self.send_json({"output_dir": None})
 
     def send_json(self, data):
         self.send_response(200)
