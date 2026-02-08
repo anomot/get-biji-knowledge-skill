@@ -1,10 +1,10 @@
-# Get-Biji-Knowledge: 你的本地 AI 知识引擎
+# Get-Biji-Knowledge-Skill: 你的本地 AI 知识引擎
 
 > 让 Claude 拥有你的私人知识库，打通 Get 笔记与本地工作流。
 
 ## 🌟 简介
 
-**Get-Biji-Knowledge** 是一个连接 **Get 笔记 (biji.com)** 与 **本地开发环境** 的桥梁。它让 Claude Code 能够直接读取、理解并引用你在 Get 笔记中积累的高质量知识，将其转化为本地的永久资产。
+**Get-Biji-Knowledge-Skill** 是一个连接 **Get 笔记 (biji.com)** 与 **本地开发环境** 的桥梁。它让 Claude Code 能够直接读取、理解并引用你在 Get 笔记中积累的高质量知识，将其转化为本地的永久资产。
 
 不再受限于网页端的封闭生态，现在，你可以在任何支持 Claude Code 的地方（终端、VS Code 及相关衍生 AI IDE、Obsidian）随时调用你的“第二大脑”。
 
@@ -71,8 +71,8 @@
 ### 安装
 ```bash
 cd ~/.claude/skills/
-git clone https://github.com/anomot/get-biji-knowledge.git
-```
+git clone https://github.com/anomot/get-biji-knowledge-skill.git
+``````
 
 ### 初始化配置
 只需要对 Claude 说一句大白话：
@@ -91,7 +91,7 @@ git clone https://github.com/anomot/get-biji-knowledge.git
 ## 🔒 安全说明
 
 - **数据隐私**：所有生成的内容均存储在您的本地设备中。
-- **配置存储**：您的 API Key 和配置信息安全地存储在本地文件 `~/.claude/get-biji-knowledge-config.json` 中，不会被上传。
+- **配置存储**：您的 API Key 和配置信息安全地存储在本地文件 `~/.claude/get-biji-knowledge-skill-config.json` 中，不会被上传。
 
 ---
 *让知识不再是躺在云端的数字库存，而是你手边随时待命的生产力。*
